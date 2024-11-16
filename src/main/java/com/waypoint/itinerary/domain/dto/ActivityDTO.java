@@ -5,10 +5,12 @@ import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.With;
 
 @Getter
 @Setter
 @Builder
+@With
 public class ActivityDTO {
   private UUID id;
   private Integer activityId;

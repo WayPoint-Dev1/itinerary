@@ -38,10 +38,8 @@ public class ItineraryHandler implements HandlerFunction<ServerResponse> {
   }
 
   public Mono<ServerResponse> handleDeleteTrip(ServerRequest serverRequest) {
-    return serverRequest
-        .bodyToMono(TripDTO.class)
-        .flatMap(
-            tripDTO -> validateDeleteTripRequest(tripDTO).flatMap(itineraryService::deleteTrip))
+    return validateDeleteTripRequest(serverRequest)
+        .flatMap(itineraryService::deleteTrip)
         .flatMap(
             tripDTO ->
                 ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(tripDTO));
@@ -57,6 +55,7 @@ public class ItineraryHandler implements HandlerFunction<ServerResponse> {
                     .flatMap(itineraryService::createActivity);
               } else {
                 return validateUpdateActivityRequest(activityDTO)
+                    .flatMap(itineraryService::updatePlaceActivityMap)
                     .flatMap(itineraryService::updateActivity);
               }
             })
@@ -66,12 +65,8 @@ public class ItineraryHandler implements HandlerFunction<ServerResponse> {
   }
 
   public Mono<ServerResponse> handleDeleteActivity(ServerRequest serverRequest) {
-    return serverRequest
-        .bodyToMono(ActivityDTO.class)
-        .flatMap(
-            activityDTO ->
-                validateDeleteActivityRequest(activityDTO)
-                    .flatMap(itineraryService::deleteActivity))
+    return validateDeleteActivityRequest(serverRequest)
+        .flatMap(itineraryService::deleteActivity)
         .flatMap(
             tripDTO ->
                 ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(tripDTO));

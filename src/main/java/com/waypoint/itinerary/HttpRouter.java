@@ -24,7 +24,7 @@ public class HttpRouter {
     return route()
         .POST(TRIP_URI, RequestPredicates.accept(MediaType.APPLICATION_JSON), itineraryHandler)
         .DELETE(
-            TRIP_URI,
+            DELETE_TRIP_URI,
             RequestPredicates.accept(MediaType.APPLICATION_JSON),
             itineraryHandler::handleDeleteTrip)
         .POST(
@@ -32,7 +32,15 @@ public class HttpRouter {
             RequestPredicates.accept(MediaType.APPLICATION_JSON),
             itineraryHandler::handleActivity)
         .DELETE(
-            ACTIVITY_URI,
+            DELETE_ACTIVITY_URI,
+            RequestPredicates.accept(MediaType.APPLICATION_JSON),
+            itineraryHandler::handleDeleteActivity)
+        .POST(
+            PLACE_URI,
+            RequestPredicates.accept(MediaType.APPLICATION_JSON),
+            itineraryHandler::handleActivity)
+        .DELETE(
+            PLACE_URI,
             RequestPredicates.accept(MediaType.APPLICATION_JSON),
             itineraryHandler::handleDeleteActivity)
         .build();

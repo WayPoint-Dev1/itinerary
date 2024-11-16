@@ -1,6 +1,7 @@
 package com.waypoint.itinerary.utilities;
 
 import static com.waypoint.itinerary.constants.ItineraryConstants.DEF_USER_NAME;
+import static com.waypoint.itinerary.constants.ItineraryConstants.USERNAME_URI_PARAM;
 
 import com.waypoint.itinerary.domain.dto.ActivityDTO;
 import com.waypoint.itinerary.domain.dto.PlaceDTO;
@@ -14,7 +15,10 @@ import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.web.reactive.function.server.ServerRequest;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 @Slf4j
 public class ItineraryMapper {
@@ -42,18 +46,21 @@ public class ItineraryMapper {
     return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
   }
 
-  public static Mono<TripDTO> validateDeleteTripRequest(TripDTO tripDTO) {
-    log.info("validateDeleteTripRequest :: TripDTO :: {}", tripDTO);
-    if (tripDTO.getId() != null) {
-      return Mono.just(tripDTO);
+  public static Mono<Tuple2<String, UUID>> validateDeleteTripRequest(ServerRequest serverRequest) {
+    log.info("validateDeleteTripRequest");
+    String tripId = serverRequest.pathVariable("tripId");
+    String userName = serverRequest.pathVariable(USERNAME_URI_PARAM);
+    if (StringUtils.isNotBlank(tripId) && StringUtils.isNotBlank(userName)) {
+      return Mono.just(Tuples.of(userName, UUID.fromString(tripId)));
     }
     return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
   }
 
-  public static Mono<ActivityDTO> validateDeleteActivityRequest(ActivityDTO activityDTO) {
-    log.info("validateDeleteActivityRequest :: ActityDTO :: {}", activityDTO);
-    if (activityDTO.getId() != null) {
-      return Mono.just(activityDTO);
+  public static Mono<UUID> validateDeleteActivityRequest(ServerRequest serverRequest) {
+    log.info("validateDeleteActivityRequest");
+    String activityId = serverRequest.pathVariable("activityId");
+    if (StringUtils.isNotBlank(activityId)) {
+      return Mono.just(UUID.fromString(activityId));
     }
     return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
   }
@@ -179,6 +186,15 @@ public class ItineraryMapper {
     activity.setDescription(activityDTO.getDescription());
     activity.setUpdatedOn(LocalDateTime.now());
     return activity;
+  }
+
+  public static PlaceActivityMap updatePlaceActivityMap(
+      PlaceActivityMap placeActivityMap, UUID placeId, UUID activityId) {
+    log.info("updatePlaceActivityMap :: PlaceActivityMap :: {}", placeActivityMap);
+    placeActivityMap.setPlaceId(placeId);
+    placeActivityMap.setActivityId(activityId);
+    placeActivityMap.setUpdatedOn(LocalDateTime.now());
+    return placeActivityMap;
   }
 
   public static Place getPlace(PlaceDTO placeDTO) {

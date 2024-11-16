@@ -12,9 +12,11 @@ import com.waypoint.itinerary.exception.GenericException;
 import com.waypoint.itinerary.repository.*;
 import com.waypoint.itinerary.utilities.ItineraryMapper;
 import java.util.Collections;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 @Service
 @Slf4j
@@ -123,17 +125,52 @@ public class ItineraryService {
         .map(ItineraryMapper::getActivityDTO);
   }
 
-  public Mono<TripDTO> deleteTrip(TripDTO tripDTO) {
-    return tripRepository
-        .findByIdAndIsActive(tripDTO.getId(), true)
-        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.TRIP_NOT_FOUND)))
-        .flatMap(this::deleteTripDetails)
-        .flatMap(trip -> deleteUserTripMapping(tripDTO, trip));
+  public Mono<ActivityDTO> updatePlaceActivityMap(ActivityDTO activityDTO) {
+    if (activityDTO.getPlaceId() != null) {
+      return placeActivityMapRepository
+          .findByPlaceIdAndActivityIdAndIsActive(
+              activityDTO.getPlaceId(), activityDTO.getId(), true)
+          .map(placeActivityMap -> activityDTO)
+          .switchIfEmpty(
+              placeRepository
+                  .findByIdAndIsActive(activityDTO.getPlaceId(), true)
+                  .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_NOT_FOUND)))
+                  .flatMap(
+                      place ->
+                          placeActivityMapRepository
+                              .findByActivityIdAndIsActive(activityDTO.getId(), true)
+                              .switchIfEmpty(
+                                  Mono.error(new GenericException(ErrorMessage.ACTIVITY_NOT_FOUND)))
+                              .flatMap(
+                                  placeActivityMap ->
+                                      placeActivityMapRepository
+                                          .save(
+                                              ItineraryMapper.updatePlaceActivityMap(
+                                                  placeActivityMap,
+                                                  activityDTO.getId(),
+                                                  place.getId()))
+                                          .switchIfEmpty(
+                                              Mono.error(
+                                                  new GenericException(
+                                                      ErrorMessage
+                                                          .PLACE_ACTIVITY_MAPPING_SAVE_FAILED)))
+                                          .thenReturn(activityDTO))));
+    }
+    return Mono.just(activityDTO);
   }
 
-  public Mono<ActivityDTO> deleteActivity(ActivityDTO activityDTO) {
+  public Mono<TripDTO> deleteTrip(Tuple2<String, UUID> request) {
+    return tripRepository
+        .findByIdAndIsActive(request.getT2(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.TRIP_NOT_FOUND)))
+        .flatMap(this::deleteTripDetails)
+        .map(tripDTO -> tripDTO.withUserName(request.getT1()))
+        .flatMap(this::deleteUserTripMapping);
+  }
+
+  public Mono<ActivityDTO> deleteActivity(UUID activityId) {
     return placeActivityMapRepository
-        .findByActivityIdAndIsActive(activityDTO.getId(), true)
+        .findByActivityIdAndIsActive(activityId, true)
         .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.ACTIVITY_NOT_FOUND)))
         .flatMap(this::deleteActivityDetails);
   }
@@ -175,6 +212,7 @@ public class ItineraryService {
   private Mono<ActivityDTO> deleteActivityDetails(PlaceActivityMap placeActivityMap) {
     return activityRepository
         .findByIdAndIsActive(placeActivityMap.getActivityId(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.ACTIVITY_NOT_FOUND)))
         .flatMap(
             activity ->
                 placeActivityMapRepository
@@ -189,15 +227,19 @@ public class ItineraryService {
                             .switchIfEmpty(
                                 Mono.error(
                                     new GenericException(ErrorMessage.ACTIVITY_DELETION_FAILED)))
-                            .map(ItineraryMapper::getActivityDTO)));
+                            .map(ItineraryMapper::getActivityDTO)
+                            .map(
+                                updatedActivityDTO ->
+                                    updatedActivityDTO.withPlaceId(
+                                        placeActivityMap.getPlaceId()))));
   }
 
-  private Mono<TripDTO> deleteUserTripMapping(TripDTO tripDTO, TripDTO tripDTO1) {
+  private Mono<TripDTO> deleteUserTripMapping(TripDTO tripDTO) {
     log.info("deleteTrip :: Initiate Delete User-Trip Mapping");
     return userMappingClient
-        .deleteUserTripMapping(tripDTO.getUserName(), tripDTO1.getId())
+        .deleteUserTripMapping(tripDTO.getUserName(), tripDTO.getId())
         .switchIfEmpty(
             Mono.error(new GenericException(ErrorMessage.USER_TRIP_MAPPING_DELETION_FAILED)))
-        .map(userDTO -> tripDTO1.withUserId(userDTO.getId()).withUserName(userDTO.getUserName()));
+        .map(userDTO -> tripDTO.withUserId(userDTO.getId()).withUserName(userDTO.getUserName()));
   }
 }
