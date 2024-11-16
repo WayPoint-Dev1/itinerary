@@ -1,9 +1,14 @@
 package com.waypoint.itinerary.service;
 
+import static com.waypoint.itinerary.utilities.ItineraryMapper.getPlaceDTO;
+import static com.waypoint.itinerary.utilities.ItineraryMapper.getTripDTO;
+
 import com.waypoint.itinerary.client.UserMappingClient;
 import com.waypoint.itinerary.domain.dto.ActivityDTO;
 import com.waypoint.itinerary.domain.dto.PlaceDTO;
+import com.waypoint.itinerary.domain.dto.PlaceMetaDTO;
 import com.waypoint.itinerary.domain.dto.TripDTO;
+import com.waypoint.itinerary.domain.entity.Place;
 import com.waypoint.itinerary.domain.entity.PlaceActivityMap;
 import com.waypoint.itinerary.domain.entity.Trip;
 import com.waypoint.itinerary.domain.entity.TripPlaceMap;
@@ -26,6 +31,7 @@ public class ItineraryService {
   private final TripPlaceMapRepository tripPlaceMapRepository;
   private final ActivityRepository activityRepository;
   private final PlaceActivityMapRepository placeActivityMapRepository;
+  private final PlaceMetaRepository placeMetaRepository;
   private final UserMappingClient userMappingClient;
 
   public ItineraryService(
@@ -34,13 +40,15 @@ public class ItineraryService {
       PlaceRepository placeRepository,
       TripPlaceMapRepository tripPlaceMapRepository,
       ActivityRepository activityRepository,
-      PlaceActivityMapRepository placeActivityMapRepository) {
+      PlaceActivityMapRepository placeActivityMapRepository,
+      PlaceMetaRepository placeMetaRepository) {
     this.tripRepository = tripRepository;
     this.userMappingClient = userMappingClient;
     this.placeRepository = placeRepository;
     this.tripPlaceMapRepository = tripPlaceMapRepository;
     this.activityRepository = activityRepository;
     this.placeActivityMapRepository = placeActivityMapRepository;
+    this.placeMetaRepository = placeMetaRepository;
   }
 
   public Mono<TripDTO> createTrip(TripDTO tripDTO) {
@@ -103,8 +111,48 @@ public class ItineraryService {
                     .map(ItineraryMapper::getActivityDTO)
                     .map(
                         updatedActivityDTO ->
-                            ItineraryMapper.getPlaceDTO(
-                                place, Collections.singletonList(updatedActivityDTO))));
+                            getPlaceDTO(
+                                place, Collections.singletonList(updatedActivityDTO), null)));
+  }
+
+  public Mono<TripDTO> createPlace(PlaceDTO placeDTO) {
+    return tripRepository
+        .findByIdAndIsActive(placeDTO.getTripId(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.TRIP_NOT_FOUND)))
+        .flatMap(
+            trip ->
+                placeRepository
+                    .save(ItineraryMapper.getPlace(placeDTO))
+                    .switchIfEmpty(
+                        Mono.error(new GenericException(ErrorMessage.PLACE_CREATION_FAILED)))
+                    .flatMap(place -> placeRepository.findById(place.getId()))
+                    .flatMap(
+                        place ->
+                            tripPlaceMapRepository
+                                .save(ItineraryMapper.getTripPlaceMap(trip.getId(), place.getId()))
+                                .switchIfEmpty(
+                                    Mono.error(
+                                        new GenericException(
+                                            ErrorMessage.TRIP_PLACE_MAPPING_SAVE_FAILED)))
+                                .thenReturn(place))
+                    .flatMap(
+                        place ->
+                            createPlaceMeta(place.getId(), placeDTO.getPlaceMeta())
+                                .map(
+                                    placeMetaDTO ->
+                                        getPlaceDTO(place, Collections.emptyList(), placeMetaDTO)))
+                    .map(
+                        updatedPlaceDTO ->
+                            getTripDTO(trip, Collections.singletonList(updatedPlaceDTO))));
+  }
+
+  public Mono<PlaceMetaDTO> createPlaceMeta(UUID placeId, PlaceMetaDTO placeMetaDTO) {
+    return placeMetaRepository
+        .save(ItineraryMapper.getPlaceMeta(placeId, placeMetaDTO))
+        .switchIfEmpty(
+            Mono.error(new GenericException(ErrorMessage.PLACE_METADATA_CREATION_FAILED)))
+        .flatMap(placeMeta -> placeMetaRepository.findById(placeMeta.getId()))
+        .map(ItineraryMapper::getPlaceMetaDTO);
   }
 
   public Mono<TripDTO> updateTrip(TripDTO tripDTO) {
@@ -125,38 +173,71 @@ public class ItineraryService {
         .map(ItineraryMapper::getActivityDTO);
   }
 
-  public Mono<ActivityDTO> updatePlaceActivityMap(ActivityDTO activityDTO) {
+  public Mono<TripDTO> updatePlace(PlaceDTO placeDTO) {
+    return placeRepository
+        .findByIdAndIsActive(placeDTO.getId(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_NOT_FOUND)))
+        .flatMap(
+            place ->
+                placeRepository
+                    .save(ItineraryMapper.updatePlace(place, placeDTO))
+                    .flatMap(
+                        updatedPlace ->
+                            updatePlaceMeta(updatedPlace.getId(), placeDTO.getPlaceMeta())
+                                .map(
+                                    placeMetaDTO ->
+                                        getPlaceDTO(
+                                            updatedPlace, Collections.emptyList(), placeMetaDTO))))
+        .map(
+            updatedPlace ->
+                ItineraryMapper.getTripDTO(null, Collections.singletonList(updatedPlace)));
+  }
+
+  public Mono<PlaceMetaDTO> updatePlaceMeta(UUID placeId, PlaceMetaDTO placeMetaDTO) {
+    return placeMetaRepository
+        .findByPlaceIdAndIsActive(placeId, true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_METADATA_NOT_FOUND)))
+        .flatMap(
+            placeMeta ->
+                placeMetaRepository.save(ItineraryMapper.updatePlaceMeta(placeMeta, placeMetaDTO)))
+        .map(ItineraryMapper::getPlaceMetaDTO);
+  }
+
+  public Mono<PlaceDTO> updatePlaceActivityMap(ActivityDTO activityDTO) {
     if (activityDTO.getPlaceId() != null) {
-      return placeActivityMapRepository
-          .findByPlaceIdAndActivityIdAndIsActive(
-              activityDTO.getPlaceId(), activityDTO.getId(), true)
-          .map(placeActivityMap -> activityDTO)
-          .switchIfEmpty(
-              placeRepository
-                  .findByIdAndIsActive(activityDTO.getPlaceId(), true)
-                  .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_NOT_FOUND)))
-                  .flatMap(
-                      place ->
-                          placeActivityMapRepository
-                              .findByActivityIdAndIsActive(activityDTO.getId(), true)
-                              .switchIfEmpty(
-                                  Mono.error(new GenericException(ErrorMessage.ACTIVITY_NOT_FOUND)))
-                              .flatMap(
-                                  placeActivityMap ->
-                                      placeActivityMapRepository
-                                          .save(
-                                              ItineraryMapper.updatePlaceActivityMap(
-                                                  placeActivityMap,
-                                                  activityDTO.getId(),
-                                                  place.getId()))
-                                          .switchIfEmpty(
-                                              Mono.error(
-                                                  new GenericException(
-                                                      ErrorMessage
-                                                          .PLACE_ACTIVITY_MAPPING_SAVE_FAILED)))
-                                          .thenReturn(activityDTO))));
+      return findExistingPlaceActivityMap(activityDTO)
+          .switchIfEmpty(validateAndUpdatePlaceActivityMap(activityDTO));
     }
-    return Mono.just(activityDTO);
+    return Mono.just(ItineraryMapper.getPlaceDTO(activityDTO));
+  }
+
+  private Mono<PlaceDTO> findExistingPlaceActivityMap(ActivityDTO activityDTO) {
+    return placeActivityMapRepository
+        .findByPlaceIdAndActivityIdAndIsActive(activityDTO.getPlaceId(), activityDTO.getId(), true)
+        .map(placeActivityMap -> ItineraryMapper.getPlaceDTO(activityDTO));
+  }
+
+  private Mono<PlaceDTO> validateAndUpdatePlaceActivityMap(ActivityDTO activityDTO) {
+    return placeRepository
+        .findByIdAndIsActive(activityDTO.getPlaceId(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_NOT_FOUND)))
+        .flatMap(place -> findAndUpdatePlaceActivityMap(activityDTO, place));
+  }
+
+  private Mono<PlaceDTO> findAndUpdatePlaceActivityMap(ActivityDTO activityDTO, Place place) {
+    return placeActivityMapRepository
+        .findByActivityIdAndIsActive(activityDTO.getId(), true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.ACTIVITY_NOT_FOUND)))
+        .flatMap(
+            placeActivityMap ->
+                placeActivityMapRepository
+                    .save(
+                        ItineraryMapper.updatePlaceActivityMap(
+                            placeActivityMap, activityDTO.getId(), place.getId()))
+                    .switchIfEmpty(
+                        Mono.error(
+                            new GenericException(ErrorMessage.PLACE_ACTIVITY_MAPPING_SAVE_FAILED)))
+                    .thenReturn(getPlaceDTO(place, Collections.singletonList(activityDTO), null)));
   }
 
   public Mono<TripDTO> deleteTrip(Tuple2<String, UUID> request) {
@@ -187,6 +268,24 @@ public class ItineraryService {
                     .map(updatedTrip -> ItineraryMapper.getTripDTO(updatedTrip, placeList)));
   }
 
+  public Mono<PlaceDTO> deletePlace(UUID placeId) {
+    return tripPlaceMapRepository
+        .findByPlaceIdAndIsActive(placeId, true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_NOT_FOUND)))
+        .flatMap(this::deletePlaceDetails);
+  }
+
+  public Mono<PlaceMetaDTO> deletePlaceMeta(UUID placeId) {
+    return placeMetaRepository
+        .findByPlaceIdAndIsActive(placeId, true)
+        .switchIfEmpty(Mono.error(new GenericException(ErrorMessage.PLACE_METADATA_NOT_FOUND)))
+        .flatMap(
+            placeMeta ->
+                placeMetaRepository
+                    .save(ItineraryMapper.deletePlaceMeta(placeMeta))
+                    .map(ItineraryMapper::getPlaceMetaDTO));
+  }
+
   private Mono<PlaceDTO> deletePlaceDetails(TripPlaceMap tripPlaceMap) {
     return placeRepository
         .findByIdAndIsActive(tripPlaceMap.getPlaceId(), true)
@@ -203,10 +302,15 @@ public class ItineraryService {
                                 .then(
                                     placeRepository
                                         .save(ItineraryMapper.deletePlace(place))
-                                        .map(
+                                        .flatMap(
                                             updatedPlace ->
-                                                ItineraryMapper.getPlaceDTO(
-                                                    updatedPlace, activityList)))));
+                                                deletePlaceMeta(updatedPlace.getId())
+                                                    .map(
+                                                        placeMetaDTO ->
+                                                            getPlaceDTO(
+                                                                updatedPlace,
+                                                                activityList,
+                                                                placeMetaDTO))))));
   }
 
   private Mono<ActivityDTO> deleteActivityDetails(PlaceActivityMap placeActivityMap) {

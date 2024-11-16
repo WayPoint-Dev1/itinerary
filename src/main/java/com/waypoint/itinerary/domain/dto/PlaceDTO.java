@@ -15,6 +15,7 @@ import lombok.With;
 public class PlaceDTO {
   private UUID id;
   private Integer placeId;
+  private UUID tripId;
   private Integer dayNo;
   private String description;
   private PlaceMetaDTO placeMeta;

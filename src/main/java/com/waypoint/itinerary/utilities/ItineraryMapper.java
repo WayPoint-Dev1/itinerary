@@ -1,16 +1,17 @@
 package com.waypoint.itinerary.utilities;
 
-import static com.waypoint.itinerary.constants.ItineraryConstants.DEF_USER_NAME;
-import static com.waypoint.itinerary.constants.ItineraryConstants.USERNAME_URI_PARAM;
+import static com.waypoint.itinerary.constants.ItineraryConstants.*;
 
 import com.waypoint.itinerary.domain.dto.ActivityDTO;
 import com.waypoint.itinerary.domain.dto.PlaceDTO;
+import com.waypoint.itinerary.domain.dto.PlaceMetaDTO;
 import com.waypoint.itinerary.domain.dto.TripDTO;
 import com.waypoint.itinerary.domain.entity.*;
 import com.waypoint.itinerary.exception.ErrorMessage;
 import com.waypoint.itinerary.exception.GenericException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +49,7 @@ public class ItineraryMapper {
 
   public static Mono<Tuple2<String, UUID>> validateDeleteTripRequest(ServerRequest serverRequest) {
     log.info("validateDeleteTripRequest");
-    String tripId = serverRequest.pathVariable("tripId");
+    String tripId = serverRequest.pathVariable(TRIP_ID_PARAM_NAME);
     String userName = serverRequest.pathVariable(USERNAME_URI_PARAM);
     if (StringUtils.isNotBlank(tripId) && StringUtils.isNotBlank(userName)) {
       return Mono.just(Tuples.of(userName, UUID.fromString(tripId)));
@@ -58,9 +59,18 @@ public class ItineraryMapper {
 
   public static Mono<UUID> validateDeleteActivityRequest(ServerRequest serverRequest) {
     log.info("validateDeleteActivityRequest");
-    String activityId = serverRequest.pathVariable("activityId");
+    String activityId = serverRequest.pathVariable(ACTIVITY_ID_PARAM_NAME);
     if (StringUtils.isNotBlank(activityId)) {
       return Mono.just(UUID.fromString(activityId));
+    }
+    return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
+  }
+
+  public static Mono<UUID> validateDeletePlaceRequest(ServerRequest serverRequest) {
+    log.info("validateDeletePlaceRequest");
+    String placeId = serverRequest.pathVariable(PLACE_ID_PARAM_NAME);
+    if (StringUtils.isNotBlank(placeId)) {
+      return Mono.just(UUID.fromString(placeId));
     }
     return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
   }
@@ -84,6 +94,30 @@ public class ItineraryMapper {
             || (activityDTO.getStartTime() != null && activityDTO.getEndTime() != null)
             || StringUtils.isNotBlank(activityDTO.getDescription()))) {
       return Mono.just(activityDTO);
+    }
+    return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
+  }
+
+  public static Mono<PlaceDTO> validateUpdatePlaceRequest(PlaceDTO placeDTO) {
+    log.info("validateUpdatePlaceRequest :: PlaceDTO :: {}", placeDTO);
+    if (placeDTO.getId() != null
+        && (placeDTO.getDayNo() != null
+            || StringUtils.isNotBlank(placeDTO.getDescription())
+            || (placeDTO.getPlaceMeta() != null
+                && (StringUtils.isNotBlank(placeDTO.getPlaceMeta().getPlaceName())
+                    || placeDTO.getPlaceMeta().getJurisdictionId() != null)))) {
+      return Mono.just(placeDTO);
+    }
+    return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
+  }
+
+  public static Mono<PlaceDTO> validateCreatePlaceRequest(PlaceDTO placeDTO) {
+    log.info("validateCreatePlaceRequest :: PlaceDTO :: {}", placeDTO);
+    if (placeDTO.getDayNo() != null
+        && placeDTO.getPlaceMeta() != null
+        && StringUtils.isNotBlank(placeDTO.getPlaceMeta().getPlaceName())
+        && placeDTO.getPlaceMeta().getJurisdictionId() != null) {
+      return Mono.just(placeDTO);
     }
     return Mono.error(new GenericException(ErrorMessage.MANDATORY_FIELDS_MISSING_OR_INVALID));
   }
@@ -197,6 +231,28 @@ public class ItineraryMapper {
     return placeActivityMap;
   }
 
+  public static Place updatePlace(Place place, PlaceDTO placeDTO) {
+    log.info("updatePlace :: Place :: {}", place);
+    if (placeDTO.getDayNo() != null) {
+      place.setDayNo(placeDTO.getDayNo());
+    }
+    place.setDescription(placeDTO.getDescription());
+    place.setUpdatedOn(LocalDateTime.now());
+    return place;
+  }
+
+  public static PlaceMeta updatePlaceMeta(PlaceMeta placeMeta, PlaceMetaDTO placeMetaDTO) {
+    log.info("updatePlaceMeta :: PlaceMeta :: {}", placeMeta);
+    if (StringUtils.isNotBlank(placeMetaDTO.getPlaceName())) {
+      placeMeta.setPlaceName(placeMetaDTO.getPlaceName());
+    }
+    if (placeMetaDTO.getJurisdictionId() != null) {
+      placeMeta.setJurisdictionId(placeMetaDTO.getJurisdictionId());
+    }
+    placeMeta.setUpdatedOn(LocalDateTime.now());
+    return placeMeta;
+  }
+
   public static Place getPlace(PlaceDTO placeDTO) {
     log.info("getPlace :: PlaceDTO :: {}", placeDTO);
     return Place.builder()
@@ -207,6 +263,36 @@ public class ItineraryMapper {
         .createdOn(LocalDateTime.now())
         .updatedBy(DEF_USER_NAME)
         .updatedOn(LocalDateTime.now())
+        .build();
+  }
+
+  public static PlaceMeta getPlaceMeta(UUID placeId, PlaceMetaDTO placeMetaDTO) {
+    log.info("getPlaceMeta :: PlaceMetaDTO :: {}", placeMetaDTO);
+    return PlaceMeta.builder()
+        .placeName(placeMetaDTO.getPlaceName())
+        .placeId(placeId)
+        .jurisdictionId(placeMetaDTO.getJurisdictionId())
+        .isActive(true)
+        .createdBy(DEF_USER_NAME)
+        .createdOn(LocalDateTime.now())
+        .updatedBy(DEF_USER_NAME)
+        .updatedOn(LocalDateTime.now())
+        .build();
+  }
+
+  public static PlaceMetaDTO getPlaceMetaDTO(PlaceMeta placeMeta) {
+    log.info("getPlaceMetaDTO :: PlaceMeta :: {}", placeMeta);
+    return PlaceMetaDTO.builder()
+        .id(placeMeta.getId())
+        .placeMetaId(placeMeta.getPlaceMetaId())
+        .placeName(placeMeta.getPlaceName())
+        .placeId(placeMeta.getPlaceId())
+        .jurisdictionId(placeMeta.getJurisdictionId())
+        .isActive(placeMeta.getIsActive())
+        .createdBy(placeMeta.getCreatedBy())
+        .createdOn(placeMeta.getCreatedOn())
+        .updatedBy(placeMeta.getUpdatedBy())
+        .updatedOn(placeMeta.getUpdatedOn())
         .build();
   }
 
@@ -225,9 +311,18 @@ public class ItineraryMapper {
         .build();
   }
 
-  public static PlaceDTO getPlaceDTO(Place place, List<ActivityDTO> activityList) {
+  public static PlaceDTO getPlaceDTO(ActivityDTO activityDTO) {
+    log.info("getPlaceDTO :: ActivityDTO :: {}", activityDTO);
+    return PlaceDTO.builder()
+        .id(activityDTO.getPlaceId())
+        .activityList(Collections.singletonList(activityDTO))
+        .build();
+  }
+
+  public static PlaceDTO getPlaceDTO(
+      Place place, List<ActivityDTO> activityList, PlaceMetaDTO placeMetaDTO) {
     log.info("getPlaceDTO :: Place :: {}", place);
-    return getPlaceDTO(place).withActivityList(activityList);
+    return getPlaceDTO(place).withActivityList(activityList).withPlaceMeta(placeMetaDTO);
   }
 
   public static Activity getActivity(ActivityDTO activityDTO) {
@@ -279,6 +374,19 @@ public class ItineraryMapper {
         .build();
   }
 
+  public static TripPlaceMap getTripPlaceMap(UUID tripId, UUID placeId) {
+    log.info("getTripPlaceMap :: tripId :: {} :: placeId :: {}", tripId, placeId);
+    return TripPlaceMap.builder()
+        .tripId(tripId)
+        .placeId(placeId)
+        .isActive(true)
+        .createdBy(DEF_USER_NAME)
+        .createdOn(LocalDateTime.now())
+        .updatedBy(DEF_USER_NAME)
+        .updatedOn(LocalDateTime.now())
+        .build();
+  }
+
   public static Trip deleteTrip(Trip trip) {
     trip.setIsActive(false);
     trip.setUpdatedOn(LocalDateTime.now());
@@ -307,5 +415,11 @@ public class ItineraryMapper {
     place.setIsActive(false);
     place.setUpdatedOn(LocalDateTime.now());
     return place;
+  }
+
+  public static PlaceMeta deletePlaceMeta(PlaceMeta placeMeta) {
+    placeMeta.setIsActive(false);
+    placeMeta.setUpdatedOn(LocalDateTime.now());
+    return placeMeta;
   }
 }
