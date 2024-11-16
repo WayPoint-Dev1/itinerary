@@ -40,7 +40,7 @@ public class HttpRouter {
             RequestPredicates.accept(MediaType.APPLICATION_JSON),
             itineraryHandler::handleActivity)
         .DELETE(
-            PLACE_URI,
+            DELETE_PLACE_URI,
             RequestPredicates.accept(MediaType.APPLICATION_JSON),
             itineraryHandler::handleDeleteActivity)
         .build();
